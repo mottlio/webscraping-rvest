@@ -1,0 +1,76 @@
+---
+title: "Webscraping gym prices and address data with rvest + RSelenium"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Install RSelenium and rvest
+```{r}
+require(rvest)
+require(RSelenium)
+require(tidyverse)
+
+## Start a RSelenium session
+remDR <- RSelenium::rsDriver(browser = "firefox")
+rd <- remDR[["client"]]
+
+
+```
+
+## Set up the data frame to store information and create a 'for loop' to go through 59 websites
+```{r}
+gyms <- c("url","address","price")
+
+for(i in 1:59) {
+  
+  if(i < 10) {
+    base_url <- "https://www.anytimefitness.co.nz/gyms/nz-100"
+  } else {
+    base_url <- "https://www.anytimefitness.co.nz/gyms/nz-10"
+  }
+  
+  url <- str_c(base_url, i)
+
+  rd$navigate(url)
+  Sys.sleep(15)
+  website <- read_html(rd$getPageSource(url)[[1]])
+
+  address_a <- html_elements(website, css = "i.icon-pinpoint-fill+a") %>% html_text()
+  address_b <- html_elements(website, xpath = '//*[contains(concat( " ", @class, " " ), concat( " ", "address", " " ))]') %>% html_text()
+#there are several elements with the same Xpath, we wabt the second
+  price_a <- html_elements(website, xpath = '//*[contains(concat( " ", @class, " " ), concat( " ", "p-6", " " ))]') %>% html_text()
+  headings_b <- html_elements(website, xpath = '//*[contains(concat( " ", @class, " " ), concat( " ", "headline", " " ))]') %>% html_text()
+  price_b <- headings_b[2]
+  
+  
+  #no_page will detect if the page does not exist - landing page displays a "404" Error.
+  no_page <- html_elements(website, xpath = '//*[contains(concat( " ", @class, " " ), concat( " ", "big-text", " " ))]') %>% html_text()
+  
+  if(length(no_page) == 0){
+    new_row <- c(url, address_a, address_b, price_a, price_b)
+  } else {
+    new_row <- c(url, str_c("no such page: ", no_page), "NA")
+  }
+  
+gyms <- rbind(gyms, na.omit(new_row))
+
+}
+```
+
+## Create a gyms data frame, clean data, extract price from text, save to a csv file
+```{r}
+gyms_df <- data.frame(url = gyms[,1], address = gyms[,2], price = gyms[,3])
+
+gyms_price <- gyms_df %>% filter(price != "NA" & price != "price") %>% mutate(price_nzd = as.numeric(str_extract_all(price, "\\d+\\.*\\d*")))
+
+#Save data to a csv
+timestamp <- toString(format(Sys.time(), "%d_%m_%Y-%H_%M_%S"))
+filename <- str_c("anytime_fitness_gyms_", timestamp,".csv")
+
+write_csv(gyms_price, filename)
+```
+
+
